@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import RoleSelection from './pages/RoleSelection'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import UserDashboard from './pages/UserDashboard'
@@ -19,7 +20,7 @@ function ProtectedRoute({ children, allowedRoles }) {
   }
   
   if (!user) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/role-selection" replace />
   }
   
   if (allowedRoles && !allowedRoles.includes(user.role)) {
@@ -40,6 +41,10 @@ function AppRoutes() {
   
   return (
     <Routes>
+      <Route 
+        path="/role-selection" 
+        element={!user ? <RoleSelection /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
+      />
       <Route 
         path="/login" 
         element={!user ? <Login /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
@@ -83,7 +88,7 @@ function AppRoutes() {
         />
       </Route>
       
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/role-selection" replace />} />
     </Routes>
   )
 }

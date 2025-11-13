@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
-  const login = async (email, password) => {
+  const login = async (email, password, expectedRole = null) => {
     // Mock authentication - in production, this would be an API call
     const mockUsers = {
       'admin@transport.com': { id: 1, email: 'admin@transport.com', name: 'Admin User', role: 'admin', password: 'admin123' },
@@ -26,6 +26,11 @@ export function AuthProvider({ children }) {
     const user = mockUsers[email]
     
     if (user && user.password === password) {
+      // Verify role if expected
+      if (expectedRole && user.role !== expectedRole) {
+        return { success: false, error: `This account is for ${user.role}s, not ${expectedRole}s` }
+      }
+      
       const { password: _, ...userWithoutPassword } = user
       setUser(userWithoutPassword)
       localStorage.setItem('user', JSON.stringify(userWithoutPassword))

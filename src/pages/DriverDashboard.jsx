@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { MapPin, Clock, Users, Navigation, Play, Pause, CheckCircle, AlertCircle, Bus } from 'lucide-react'
+import { MapPin, Clock, Users, Navigation, Play, Pause, CheckCircle, AlertCircle, Bus, Smartphone } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 const mockAssignedRoutes = [
@@ -46,13 +46,39 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     if (isTracking && activeRoute?.currentTrip) {
-      // Simulate location updates
-      const interval = setInterval(() => {
-        setLocation(prev => ({
-          lat: prev.lat + (Math.random() - 0.5) * 0.001,
-          lng: prev.lng + (Math.random() - 0.5) * 0.001
-        }))
-      }, 3000)
+      // Get real location from mobile device (in production, use navigator.geolocation)
+      const getLocation = () => {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setLocation({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              })
+            },
+            (error) => {
+              console.warn('Location access denied or unavailable, using simulated location')
+              // Fallback to simulated location if GPS is not available
+              setLocation(prev => ({
+                lat: prev.lat + (Math.random() - 0.5) * 0.001,
+                lng: prev.lng + (Math.random() - 0.5) * 0.001
+              }))
+            }
+          )
+        } else {
+          // Fallback for browsers without geolocation
+          setLocation(prev => ({
+            lat: prev.lat + (Math.random() - 0.5) * 0.001,
+            lng: prev.lng + (Math.random() - 0.5) * 0.001
+          }))
+        }
+      }
+
+      // Get location immediately
+      getLocation()
+      
+      // Update location every 5 seconds
+      const interval = setInterval(getLocation, 5000)
 
       return () => clearInterval(interval)
     }
@@ -129,6 +155,20 @@ export default function DriverDashboard() {
         <p className="text-gray-600 mt-1">Welcome back, {user?.name}</p>
       </div>
 
+      {/* Mobile Location Tracking Notice */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start space-x-3">
+        <div className="flex-shrink-0">
+          <Smartphone className="h-5 w-5 text-blue-600 mt-0.5" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-sm font-semibold text-blue-900 mb-1">Mobile Location Tracking</h3>
+          <p className="text-sm text-blue-800">
+            Since buses don't have GPS tracking hardware, your mobile device's location is used to track the bus position in real-time. 
+            Make sure location services are enabled and the app has permission to access your location.
+          </p>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="card">
@@ -198,6 +238,10 @@ export default function DriverDashboard() {
               <p className="text-sm text-gray-600 mb-1">Current Location</p>
               <p className="font-semibold text-gray-900 text-xs">
                 {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+              </p>
+              <p className="text-xs text-gray-500 mt-1 flex items-center">
+                <Smartphone className="h-3 w-3 mr-1" />
+                Mobile GPS
               </p>
             </div>
           </div>
