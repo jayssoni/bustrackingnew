@@ -7,6 +7,7 @@ import UserDashboard from './pages/UserDashboard'
 import DriverDashboard from './pages/DriverDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import Layout from './components/Layout'
+import PublicLayout from './components/PublicLayout'
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth()
@@ -41,35 +42,42 @@ function AppRoutes() {
   
   return (
     <Routes>
+      {/* Public Customer View */}
+      <Route path="/" element={<PublicLayout />}>
+        <Route index element={<UserDashboard isPublic={true} />} />
+      </Route>
+
+      {/* Auth Routes */}
       <Route 
         path="/role-selection" 
         element={!user ? <RoleSelection /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
       />
       <Route 
-        path="/login" 
-        element={!user ? <Login /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
+        path="/driver/login" 
+        element={!user ? <Login role="driver" /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
       />
       <Route 
-        path="/register" 
-        element={!user ? <Register /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
+        path="/admin/login" 
+        element={!user ? <Login role="admin" /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
+      />
+      <Route 
+        path="/driver/register" 
+        element={!user ? <Register role="driver" /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
+      />
+      <Route 
+        path="/admin/register" 
+        element={!user ? <Register role="admin" /> : <Navigate to={getDefaultRoute(user?.role)} replace />} 
       />
       
+      {/* Protected Routes */}
       <Route
-        path="/"
+        path="/dashboard"
         element={
           <ProtectedRoute>
             <Layout />
           </ProtectedRoute>
         }
       >
-        <Route
-          index
-          element={
-            <ProtectedRoute allowedRoles={['user']}>
-              <UserDashboard />
-            </ProtectedRoute>
-          }
-        />
         <Route
           path="driver"
           element={
@@ -88,7 +96,11 @@ function AppRoutes() {
         />
       </Route>
       
-      <Route path="*" element={<Navigate to="/role-selection" replace />} />
+      {/* Redirects for backward compatibility */}
+      <Route path="/driver" element={user?.role === 'driver' ? <Navigate to="/dashboard/driver" /> : <Navigate to="/driver/login" />} />
+      <Route path="/admin" element={user?.role === 'admin' ? <Navigate to="/dashboard/admin" /> : <Navigate to="/admin/login" />} />
+      
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }

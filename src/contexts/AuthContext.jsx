@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { authAPI } from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -16,47 +17,48 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = async (email, password, expectedRole = null) => {
-    // Mock authentication - in production, this would be an API call
-    const mockUsers = {
-      'admin@transport.com': { id: 1, email: 'admin@transport.com', name: 'Admin User', role: 'admin', password: 'admin123' },
-      'driver@transport.com': { id: 2, email: 'driver@transport.com', name: 'John Driver', role: 'driver', password: 'driver123' },
-      'user@transport.com': { id: 3, email: 'user@transport.com', name: 'John Doe', role: 'user', password: 'user123' },
-    }
-
-    const user = mockUsers[email]
-    
-    if (user && user.password === password) {
+    try {
+      const response = await authAPI.login(email, password);
+      const { user: userData, token } = response.data;
+      
       // Verify role if expected
-      if (expectedRole && user.role !== expectedRole) {
-        return { success: false, error: `This account is for ${user.role}s, not ${expectedRole}s` }
+      if (expectedRole && userData.role !== expectedRole) {
+        return { success: false, error: `This account is for ${userData.role}s, not ${expectedRole}s` };
       }
       
-      const { password: _, ...userWithoutPassword } = user
-      setUser(userWithoutPassword)
-      localStorage.setItem('user', JSON.stringify(userWithoutPassword))
-      return { success: true }
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem('token', token);
+      return { success: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Login failed. Please try again.' 
+      };
     }
-    
-    return { success: false, error: 'Invalid credentials' }
   }
 
   const register = async (name, email, password, role = 'user') => {
-    // Mock registration
-    const newUser = {
-      id: Date.now(),
-      email,
-      name,
-      role,
+    try {
+      const response = await authAPI.register(name, email, password, role);
+      const { user: userData, token } = response.data;
+      
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem('token', token);
+      return { success: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Registration failed. Please try again.' 
+      };
     }
-    
-    setUser(newUser)
-    localStorage.setItem('user', JSON.stringify(newUser))
-    return { success: true }
   }
 
   const logout = () => {
     setUser(null)
     localStorage.removeItem('user')
+    localStorage.removeItem('token')
   }
 
   return (

@@ -1,386 +1,426 @@
 import { useState, useEffect } from 'react'
-import { MapPin, Clock, Users, Navigation, Play, Pause, CheckCircle, AlertCircle, Bus, Smartphone } from 'lucide-react'
+import { MapPin, Clock, Users, Play, Pause, CheckCircle, Bus, Smartphone, AlertCircle } from 'lucide-react'
+import { FaMapMarkerAlt } from 'react-icons/fa'
 import { useAuth } from '../contexts/AuthContext'
-
-const mockAssignedRoutes = [
-  {
-    id: 1,
-    number: '101',
-    name: 'City Center - Airport',
-    from: 'City Center',
-    to: 'Airport',
-    startTime: '08:00',
-    endTime: '18:00',
-    totalTrips: 6,
-    completedTrips: 2,
-    currentTrip: {
-      id: 1,
-      status: 'in-progress', // 'scheduled', 'in-progress', 'completed'
-      passengers: 25,
-      capacity: 40,
-      currentLocation: { lat: 28.6139, lng: 77.2090 },
-      nextStop: 'Airport Terminal',
-      estimatedArrival: 15
-    }
-  },
-  {
-    id: 2,
-    number: '102',
-    name: 'Downtown - Railway Station',
-    from: 'Downtown',
-    to: 'Railway Station',
-    startTime: '09:00',
-    endTime: '19:00',
-    totalTrips: 5,
-    completedTrips: 0,
-    currentTrip: null
-  }
-]
+import { busesAPI } from '../services/api'
 
 export default function DriverDashboard() {
   const { user } = useAuth()
-  const [routes, setRoutes] = useState(mockAssignedRoutes)
-  const [activeRoute, setActiveRoute] = useState(routes[0])
-  const [isTracking, setIsTracking] = useState(true)
-  const [location, setLocation] = useState({ lat: 28.6139, lng: 77.2090 })
+  const [assignedBus, setAssignedBus] = useState(null)
+  const [route, setRoute] = useState(null)
+  const [isTracking, setIsTracking] = useState(false)
+  const [location, setLocation] = useState(null)
+  const [cityName, setCityName] = useState('')
+  const [passengers, setPassengers] = useState(0)
+  const [eta, setEta] = useState(15)
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({
+    completedTrips: 2,
+    todayEarnings: 300,
+    activePassengers: 0
+  })
 
+  // Fetch city name from coordinates
+  const getCityName = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`
+      )
+      const data = await response.json()
+      
+      if (data.address) {
+        const city = data.address.city || 
+                     data.address.town || 
+                     data.address.village || 
+                     data.address.state_district || 
+                     'Unknown'
+        const state = data.address.state || ''
+        return state ? `${city}, ${state}` : city
+      }
+      return 'Location detected'
+    } catch (error) {
+      console.error('Error fetching city name:', error)
+      return 'Location detected'
+    }
+  }
+
+  // Fetch assigned bus for this driver
   useEffect(() => {
-    if (isTracking && activeRoute?.currentTrip) {
-      // Get real location from mobile device (in production, use navigator.geolocation)
-      const getLocation = () => {
+    const fetchAssignedBus = async () => {
+      try {
+        const response = await busesAPI.getAll()
+        const buses = response.data
+        // Find bus assigned to this driver
+        const myBus = buses.find(b => b.driver && b.driver._id === user?.id)
+        
+        if (myBus) {
+          setAssignedBus(myBus)
+          setPassengers(myBus.currentPassengers || 0)
+          setEta(myBus.eta || 15)
+          setLocation(myBus.location)
+          
+          // Get route from bus object (already populated)
+          if (myBus.route) {
+            setRoute(myBus.route)
+          }
+          
+          // Get city name for current location
+          if (myBus.location) {
+            const city = await getCityName(myBus.location.lat, myBus.location.lng)
+            setCityName(city)
+          }
+        }
+        setLoading(false)
+      } catch (error) {
+        console.error('Error fetching assigned bus:', error)
+        setLoading(false)
+      }
+    }
+
+    fetchAssignedBus()
+  }, [user])
+
+  // Track location when tracking is enabled
+  useEffect(() => {
+    if (isTracking && assignedBus) {
+      const trackLocation = () => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
-            (position) => {
-              setLocation({
+            async (position) => {
+              const newLocation = {
                 lat: position.coords.latitude,
                 lng: position.coords.longitude
-              })
+              }
+              setLocation(newLocation)
+              
+              // Get city name
+              const city = await getCityName(newLocation.lat, newLocation.lng)
+              setCityName(city)
+              
+              // Update backend
+              try {
+                await busesAPI.updateLocation(assignedBus._id, {
+                  lat: newLocation.lat,
+                  lng: newLocation.lng,
+                  currentPassengers: passengers,
+                  eta: eta
+                })
+              } catch (error) {
+                console.error('Error updating location:', error)
+              }
             },
-            (error) => {
-              console.warn('Location access denied or unavailable, using simulated location')
-              // Fallback to simulated location if GPS is not available
-              setLocation(prev => ({
-                lat: prev.lat + (Math.random() - 0.5) * 0.001,
-                lng: prev.lng + (Math.random() - 0.5) * 0.001
-              }))
+            () => {
+              console.warn('Location access denied, using fallback')
+              // Fallback to simulated location
+              setLocation(prev => prev || { lat: 21.2514, lng: 81.6296 })
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 0
             }
           )
-        } else {
-          // Fallback for browsers without geolocation
-          setLocation(prev => ({
-            lat: prev.lat + (Math.random() - 0.5) * 0.001,
-            lng: prev.lng + (Math.random() - 0.5) * 0.001
-          }))
         }
       }
 
-      // Get location immediately
-      getLocation()
+      // Track immediately
+      trackLocation()
       
-      // Update location every 5 seconds
-      const interval = setInterval(getLocation, 5000)
-
+      // Track every 10 seconds
+      const interval = setInterval(trackLocation, 10000)
       return () => clearInterval(interval)
     }
-  }, [isTracking, activeRoute])
+  }, [isTracking, assignedBus, passengers, eta])
 
-  const startTrip = (routeId) => {
-    setRoutes(prevRoutes =>
-      prevRoutes.map(route => {
-        if (route.id === routeId && !route.currentTrip) {
-          return {
-            ...route,
-            currentTrip: {
-              id: Date.now(),
-              status: 'in-progress',
-              passengers: 0,
-              capacity: 40,
-              currentLocation: location,
-              nextStop: route.to,
-              estimatedArrival: 30
-            }
-          }
-        }
-        return route
-      })
-    )
-    setActiveRoute(routes.find(r => r.id === routeId))
+  const updatePassengerCount = async (newCount) => {
+    const count = Math.max(0, Math.min(assignedBus?.capacity || 40, newCount))
+    setPassengers(count)
+    setStats(prev => ({ ...prev, activePassengers: count }))
+    
+    // Update backend if tracking
+    if (isTracking && assignedBus && location) {
+      try {
+        await busesAPI.updateLocation(assignedBus._id, {
+          lat: location.lat,
+          lng: location.lng,
+          currentPassengers: count,
+          eta: eta
+        })
+      } catch (error) {
+        console.error('Error updating passenger count:', error)
+      }
+    }
+  }
+
+  const updateETA = async (newEta) => {
+    setEta(newEta)
+    
+    // Update backend if tracking
+    if (isTracking && assignedBus && location) {
+      try {
+        await busesAPI.updateLocation(assignedBus._id, {
+          lat: location.lat,
+          lng: location.lng,
+          currentPassengers: passengers,
+          eta: newEta
+        })
+      } catch (error) {
+        console.error('Error updating ETA:', error)
+      }
+    }
+  }
+
+  const startTracking = () => {
     setIsTracking(true)
   }
 
-  const endTrip = (routeId) => {
-    setRoutes(prevRoutes =>
-      prevRoutes.map(route => {
-        if (route.id === routeId && route.currentTrip) {
-          return {
-            ...route,
-            completedTrips: route.completedTrips + 1,
-            currentTrip: null
-          }
-        }
-        return route
-      })
-    )
+  const stopTracking = () => {
     setIsTracking(false)
   }
 
-  const updatePassengerCount = (routeId, count) => {
-    setRoutes(prevRoutes =>
-      prevRoutes.map(route => {
-        if (route.id === routeId && route.currentTrip) {
-          return {
-            ...route,
-            currentTrip: {
-              ...route.currentTrip,
-              passengers: Math.max(0, Math.min(route.currentTrip.capacity, count))
-            }
-          }
-        }
-        return route
-      })
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
     )
   }
 
-  const stats = {
-    totalTrips: routes.reduce((sum, r) => sum + r.completedTrips, 0),
-    todayEarnings: routes.reduce((sum, r) => sum + r.completedTrips * 150, 0),
-    activePassengers: activeRoute?.currentTrip?.passengers || 0
+  if (!assignedBus) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="h-16 w-16 text-amber-500 mx-auto mb-4" />
+          <p className="text-gray-900 font-semibold text-xl mb-2">No Bus Assigned</p>
+          <p className="text-gray-600">Please contact the administrator to assign a bus to your account.</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Driver Dashboard</h1>
-        <p className="text-gray-600 mt-1">Welcome back, {user?.name}</p>
+      <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-2xl shadow-xl p-8 text-white">
+        <h1 className="text-4xl font-bold mb-2">Driver Dashboard</h1>
+        <p className="text-green-100 text-lg">Welcome back, {user?.name}</p>
       </div>
 
       {/* Mobile Location Tracking Notice */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start space-x-3">
+      <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 flex items-start space-x-3">
         <div className="flex-shrink-0">
-          <Smartphone className="h-5 w-5 text-blue-600 mt-0.5" />
+          <Smartphone className="h-6 w-6 text-blue-600 mt-0.5" />
         </div>
         <div className="flex-1">
-          <h3 className="text-sm font-semibold text-blue-900 mb-1">Mobile Location Tracking</h3>
+          <h3 className="text-sm font-bold text-blue-900 mb-1">📱 Mobile Location Tracking</h3>
           <p className="text-sm text-blue-800">
-            Since buses don't have GPS tracking hardware, your mobile device's location is used to track the bus position in real-time. 
-            Make sure location services are enabled and the app has permission to access your location.
+            Your mobile device&apos;s GPS is used to track the bus position in real-time. 
+            Make sure location services are enabled for accurate tracking.
           </p>
         </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card">
+        <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Completed Trips</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalTrips}</p>
+              <p className="text-sm text-gray-600 font-medium">Completed Trips</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{stats.completedTrips}</p>
             </div>
-            <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-              <CheckCircle className="h-6 w-6 text-green-600" />
+            <div className="h-14 w-14 bg-gradient-to-br from-green-400 to-green-500 rounded-xl flex items-center justify-center shadow-md">
+              <CheckCircle className="h-7 w-7 text-white" />
             </div>
           </div>
         </div>
 
-        <div className="card">
+        <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Today's Earnings</p>
-              <p className="text-2xl font-bold text-gray-900">₹{stats.todayEarnings}</p>
+              <p className="text-sm text-gray-600 font-medium">Today&apos;s Earnings</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">₹{stats.todayEarnings}</p>
             </div>
-            <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
-              <Users className="h-6 w-6 text-blue-600" />
+            <div className="h-14 w-14 bg-gradient-to-br from-blue-400 to-blue-500 rounded-xl flex items-center justify-center shadow-md">
+              <Users className="h-7 w-7 text-white" />
             </div>
           </div>
         </div>
 
-        <div className="card">
+        <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600">Active Passengers</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.activePassengers}</p>
+              <p className="text-sm text-gray-600 font-medium">Active Passengers</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{passengers}</p>
             </div>
-            <div className="h-12 w-12 bg-primary-100 rounded-full flex items-center justify-center">
-              <Bus className="h-6 w-6 text-primary-600" />
+            <div className="h-14 w-14 bg-gradient-to-br from-purple-400 to-purple-500 rounded-xl flex items-center justify-center shadow-md">
+              <Bus className="h-7 w-7 text-white" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Active Trip */}
-      {activeRoute?.currentTrip && (
-        <div className="card border-2 border-primary-200">
-          <div className="flex justify-between items-start mb-4">
+      {/* Active Trip Section */}
+      <div className="bg-white rounded-2xl shadow-xl border-2 border-green-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 border-b-2 border-green-100">
+          <div className="flex justify-between items-start">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Active Trip</h2>
-              <p className="text-gray-600">Route {activeRoute.number}: {activeRoute.name}</p>
+              <h2 className="text-2xl font-bold text-gray-900 mb-1">Active Trip</h2>
+              <p className="text-gray-600">Bus {assignedBus.number} • Route {route?.number}: {route?.name}</p>
             </div>
             <div className="flex items-center space-x-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                isTracking ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+              <span className={`px-4 py-2 rounded-full text-sm font-bold shadow-sm ${
+                isTracking ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700'
               }`}>
-                {isTracking ? 'Tracking' : 'Paused'}
+                {isTracking ? '🟢 Tracking' : '⚫ Paused'}
               </span>
             </div>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600 mb-1">Next Stop</p>
-              <p className="font-semibold text-gray-900">{activeRoute.currentTrip.nextStop}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600 mb-1">Estimated Arrival</p>
-              <p className="font-semibold text-gray-900">{activeRoute.currentTrip.estimatedArrival} min</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600 mb-1">Current Location</p>
-              <p className="font-semibold text-gray-900 text-xs">
-                {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+        <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border-2 border-blue-200">
+              <p className="text-sm text-blue-700 font-medium mb-1 flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Next Stop
               </p>
-              <p className="text-xs text-gray-500 mt-1 flex items-center">
-                <Smartphone className="h-3 w-3 mr-1" />
+              <p className="font-bold text-gray-900 text-lg">{route?.to || 'Destination'}</p>
+            </div>
+            
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 border-2 border-amber-200">
+              <p className="text-sm text-amber-700 font-medium mb-1 flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Estimated Arrival
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={eta}
+                  onChange={(e) => updateETA(parseInt(e.target.value) || 0)}
+                  className="w-16 px-2 py-1 border-2 border-amber-300 rounded-lg font-bold text-lg"
+                  min="0"
+                />
+                <span className="font-bold text-gray-900">min</span>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200">
+              <p className="text-sm text-green-700 font-medium mb-1 flex items-center gap-2">
+                <FaMapMarkerAlt className="h-4 w-4" />
+                Current Location
+              </p>
+              <p className="font-bold text-gray-900">{cityName || 'Detecting...'}</p>
+              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                <Smartphone className="h-3 w-3" />
                 Mobile GPS
               </p>
             </div>
           </div>
 
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
-              <p className="text-sm font-medium text-gray-700">Passengers</p>
-              <p className="text-sm text-gray-600">
-                {activeRoute.currentTrip.passengers} / {activeRoute.currentTrip.capacity}
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-3">
+              <p className="text-sm font-bold text-gray-700">Passenger Load</p>
+              <p className="text-sm text-gray-600 font-medium">
+                {passengers} / {assignedBus.capacity}
               </p>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full bg-gray-200 rounded-full h-4 shadow-inner">
               <div
-                className="bg-primary-600 h-3 rounded-full transition-all"
-                style={{ width: `${(activeRoute.currentTrip.passengers / activeRoute.currentTrip.capacity) * 100}%` }}
+                className="bg-gradient-to-r from-green-500 to-emerald-500 h-4 rounded-full transition-all duration-300 shadow-md"
+                style={{ width: `${(passengers / assignedBus.capacity) * 100}%` }}
               ></div>
             </div>
           </div>
 
-          <div className="flex space-x-3">
-            <button
-              onClick={() => setIsTracking(!isTracking)}
-              className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-lg font-medium transition-colors ${
-                isTracking
-                  ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-              }`}
-            >
-              {isTracking ? (
-                <>
-                  <Pause className="h-4 w-4" />
-                  <span>Pause Tracking</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  <span>Resume Tracking</span>
-                </>
-              )}
-            </button>
-            <button
-              onClick={() => endTrip(activeRoute.id)}
-              className="flex-1 btn-primary"
-            >
-              End Trip
-            </button>
+          <div className="flex space-x-3 mb-6">
+            {!isTracking ? (
+              <button
+                onClick={startTracking}
+                className="flex-1 flex items-center justify-center space-x-2 py-3 px-6 rounded-xl font-bold text-white bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow-lg transition-all duration-200 transform hover:scale-105"
+              >
+                <Play className="h-5 w-5" />
+                <span>Start Tracking</span>
+              </button>
+            ) : (
+              <button
+                onClick={stopTracking}
+                className="flex-1 flex items-center justify-center space-x-2 py-3 px-6 rounded-xl font-bold text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-lg transition-all duration-200"
+              >
+                <Pause className="h-5 w-5" />
+                <span>Pause Tracking</span>
+              </button>
+            )}
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div className="pt-6 border-t-2 border-gray-200">
+            <label className="block text-sm font-bold text-gray-700 mb-3">
               Update Passenger Count
             </label>
-            <div className="flex space-x-2">
+            <div className="flex space-x-3">
               <button
-                onClick={() => updatePassengerCount(activeRoute.id, activeRoute.currentTrip.passengers - 1)}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
+                onClick={() => updatePassengerCount(passengers - 1)}
+                className="px-6 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl font-bold text-xl shadow-md transition-all duration-200 transform hover:scale-105"
               >
                 -
               </button>
               <input
                 type="number"
-                value={activeRoute.currentTrip.passengers}
-                onChange={(e) => updatePassengerCount(activeRoute.id, parseInt(e.target.value) || 0)}
-                className="flex-1 input-field text-center"
+                value={passengers}
+                onChange={(e) => updatePassengerCount(parseInt(e.target.value) || 0)}
+                className="flex-1 text-center text-2xl font-bold border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
                 min="0"
-                max={activeRoute.currentTrip.capacity}
+                max={assignedBus.capacity}
               />
               <button
-                onClick={() => updatePassengerCount(activeRoute.id, activeRoute.currentTrip.passengers + 1)}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium"
+                onClick={() => updatePassengerCount(passengers + 1)}
+                className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-bold text-xl shadow-md transition-all duration-200 transform hover:scale-105"
               >
                 +
               </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Assigned Routes */}
-      <div>
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">My Routes</h2>
-        <div className="space-y-4">
-          {routes.map(route => (
-            <div key={route.id} className="card">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <span className="text-xl font-bold text-primary-600">#{route.number}</span>
-                    <h3 className="text-lg font-semibold text-gray-900">{route.name}</h3>
-                  </div>
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
-                    <div className="flex items-center space-x-1">
-                      <MapPin className="h-4 w-4" />
-                      <span>{route.from} → {route.to}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Clock className="h-4 w-4" />
-                      <span>{route.startTime} - {route.endTime}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <Bus className="h-4 w-4" />
-                      <span>{route.completedTrips} / {route.totalTrips} trips</span>
-                    </div>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-primary-600 h-2 rounded-full"
-                      style={{ width: `${(route.completedTrips / route.totalTrips) * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="ml-4">
-                  {route.currentTrip ? (
-                    <div className="text-right">
-                      <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium mb-2">
-                        In Progress
-                      </span>
-                      <button
-                        onClick={() => setActiveRoute(route)}
-                        className="block w-full btn-primary text-sm"
-                      >
-                        View Trip
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => startTrip(route.id)}
-                      className="btn-primary"
-                    >
-                      Start Trip
-                    </button>
-                  )}
-                </div>
+      {/* Route Information */}
+      {route && (
+        <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Route Information</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center space-x-3">
+              <MapPin className="h-5 w-5 text-blue-600" />
+              <div>
+                <p className="text-xs text-gray-500">From</p>
+                <p className="font-semibold text-gray-900">{route.from}</p>
               </div>
             </div>
-          ))}
+            <div className="flex items-center space-x-3">
+              <MapPin className="h-5 w-5 text-red-600" />
+              <div>
+                <p className="text-xs text-gray-500">To</p>
+                <p className="font-semibold text-gray-900">{route.to}</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Clock className="h-5 w-5 text-green-600" />
+              <div>
+                <p className="text-xs text-gray-500">Duration</p>
+                <p className="font-semibold text-gray-900">{route.duration}</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <Bus className="h-5 w-5 text-purple-600" />
+              <div>
+                <p className="text-xs text-gray-500">Frequency</p>
+                <p className="font-semibold text-gray-900">{route.frequency}</p>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
-

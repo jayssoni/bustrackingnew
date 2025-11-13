@@ -30,9 +30,9 @@ const roleConfig = {
   }
 }
 
-export default function Login() {
+export default function Login({ role = null }) {
   const [searchParams] = useSearchParams()
-  const selectedRole = searchParams.get('role') || null
+  const selectedRole = role || searchParams.get('role') || null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -44,11 +44,11 @@ export default function Login() {
   const RoleIcon = roleInfo?.icon || Bus
 
   useEffect(() => {
-    // If no role selected, redirect to role selection
-    if (!selectedRole) {
+    // If no role selected via prop or query param, redirect to role selection
+    if (!selectedRole && !role) {
       navigate('/role-selection', { replace: true })
     }
-  }, [selectedRole, navigate])
+  }, [selectedRole, role, navigate])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -67,9 +67,9 @@ export default function Login() {
       }
       // Redirect based on role
       if (user.role === 'admin') {
-        navigate('/admin', { replace: true })
+        navigate('/dashboard/admin', { replace: true })
       } else if (user.role === 'driver') {
-        navigate('/driver', { replace: true })
+        navigate('/dashboard/driver', { replace: true })
       } else {
         navigate('/', { replace: true })
       }
@@ -163,9 +163,9 @@ export default function Login() {
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <button
-                onClick={() => navigate('/register')}
+                onClick={() => navigate(`/${selectedRole}/register`)}
                 className="text-primary-600 hover:text-primary-700 font-medium"
               >
                 Sign up

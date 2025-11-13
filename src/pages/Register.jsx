@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Bus, AlertCircle } from 'lucide-react'
 
-export default function Register() {
+export default function Register({ role = null }) {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'user'
+    role: role || 'user'
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -45,9 +45,9 @@ export default function Register() {
       const user = JSON.parse(localStorage.getItem('user'))
       // Redirect based on role
       if (user.role === 'admin') {
-        navigate('/admin', { replace: true })
+        navigate('/dashboard/admin', { replace: true })
       } else if (user.role === 'driver') {
-        navigate('/driver', { replace: true })
+        navigate('/dashboard/driver', { replace: true })
       } else {
         navigate('/', { replace: true })
       }
@@ -110,22 +110,24 @@ export default function Register() {
               />
             </div>
 
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
-                Role
-              </label>
-              <select
-                id="role"
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                className="input-field"
-              >
-                <option value="user">User</option>
-                <option value="driver">Driver</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
+            {!role && (
+              <div>
+                <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+                  Role
+                </label>
+                <select
+                  id="role"
+                  name="role"
+                  value={formData.role}
+                  onChange={handleChange}
+                  className="input-field"
+                >
+                  <option value="user">User</option>
+                  <option value="driver">Driver</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
@@ -172,7 +174,7 @@ export default function Register() {
             <p className="text-sm text-gray-600">
               Already have an account?{' '}
               <button
-                onClick={() => navigate('/login')}
+                onClick={() => navigate(role ? `/${role}/login` : '/login')}
                 className="text-primary-600 hover:text-primary-700 font-medium"
               >
                 Sign in

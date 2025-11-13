@@ -1,78 +1,39 @@
 import { useState, useEffect } from 'react'
-import { Search, MapPin, Clock, Users, Bus, Star, Navigation } from 'lucide-react'
+import { Search, MapPin, Clock, Users, Bus, Star } from 'lucide-react'
+import { FaList, FaMap } from 'react-icons/fa'
 import RouteCard from '../components/RouteCard'
 import MapView from '../components/MapView'
+import { routesAPI } from '../services/api'
 
-const mockRoutes = [
-  {
-    id: 1,
-    number: '101',
-    name: 'City Center - Airport',
-    from: 'City Center',
-    to: 'Airport',
-    distance: '15 km',
-    duration: '45 min',
-    frequency: 'Every 15 min',
-    buses: [
-      { id: 1, number: 'BUS-001', eta: 5, passengers: 25, capacity: 40, lat: 28.6139, lng: 77.2090 },
-      { id: 2, number: 'BUS-002', eta: 12, passengers: 18, capacity: 40, lat: 28.6145, lng: 77.2100 },
-    ],
-    favorite: false
-  },
-  {
-    id: 2,
-    number: '102',
-    name: 'Downtown - Railway Station',
-    from: 'Downtown',
-    to: 'Railway Station',
-    distance: '8 km',
-    duration: '30 min',
-    frequency: 'Every 10 min',
-    buses: [
-      { id: 3, number: 'BUS-003', eta: 8, passengers: 32, capacity: 40, lat: 28.6120, lng: 77.2080 },
-    ],
-    favorite: true
-  },
-  {
-    id: 3,
-    number: '103',
-    name: 'University - Mall',
-    from: 'University',
-    to: 'Shopping Mall',
-    distance: '12 km',
-    duration: '35 min',
-    frequency: 'Every 20 min',
-    buses: [
-      { id: 4, number: 'BUS-004', eta: 15, passengers: 12, capacity: 40, lat: 28.6150, lng: 77.2110 },
-      { id: 5, number: 'BUS-005', eta: 22, passengers: 8, capacity: 40, lat: 28.6160, lng: 77.2120 },
-    ],
-    favorite: false
-  },
-]
-
-export default function UserDashboard() {
+export default function UserDashboard({ isPublic = false }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRoute, setSelectedRoute] = useState(null)
-  const [viewMode, setViewMode] = useState('list') // 'list' or 'map'
-  const [routes, setRoutes] = useState(mockRoutes)
+  const [viewMode, setViewMode] = useState('map') // 'list' or 'map'
+  const [routes, setRoutes] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    // Simulate real-time updates
+    fetchRoutes()
+    // Set up real-time updates every 5 seconds
     const interval = setInterval(() => {
-      setRoutes(prevRoutes => 
-        prevRoutes.map(route => ({
-          ...route,
-          buses: route.buses.map(bus => ({
-            ...bus,
-            eta: Math.max(1, bus.eta - 0.5),
-            passengers: Math.min(bus.capacity, bus.passengers + Math.floor(Math.random() * 3) - 1)
-          }))
-        }))
-      )
+      fetchRoutes()
     }, 5000)
 
     return () => clearInterval(interval)
   }, [])
+
+  const fetchRoutes = async () => {
+    try {
+      const response = await routesAPI.getAll()
+      setRoutes(response.data)
+      setLoading(false)
+    } catch (err) {
+      console.error('Error fetching routes:', err)
+      setError('Failed to load routes')
+      setLoading(false)
+    }
+  }
 
   const toggleFavorite = (routeId) => {
     setRoutes(prevRoutes =>
@@ -91,52 +52,83 @@ export default function UserDashboard() {
 
   const favoriteRoutes = routes.filter(route => route.favorite)
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading routes...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <button 
+            onClick={fetchRoutes}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Find Your Bus</h1>
-          <p className="text-gray-600 mt-1">Track buses in real-time</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setViewMode('list')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'list'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            List View
-          </button>
-          <button
-            onClick={() => setViewMode('map')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'map'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            Map View
-          </button>
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-xl p-8 text-white">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">Find Your Bus</h1>
+            <p className="text-blue-100 text-lg">Track buses in real-time across the city</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-6 py-3 rounded-xl font-semibold transition-all duration-200 shadow-md flex items-center gap-2 ${
+                viewMode === 'list'
+                  ? 'bg-white text-blue-600 shadow-lg transform scale-105'
+                  : 'bg-blue-500 bg-opacity-50 text-white hover:bg-opacity-70'
+              }`}
+            >
+              <FaList /> List View
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`px-6 py-3 rounded-xl font-semibold transition-all duration-200 shadow-md flex items-center gap-2 ${
+                viewMode === 'map'
+                  ? 'bg-white text-blue-600 shadow-lg transform scale-105'
+                  : 'bg-blue-500 bg-opacity-50 text-white hover:bg-opacity-70'
+              }`}
+            >
+              <FaMap /> Map View
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search routes, bus numbers, or locations..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
-        />
-      </div>
+      {!isPublic && (
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search routes, bus numbers, or locations..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+          />
+        </div>
+      )}
 
       {/* Favorites Section */}
-      {favoriteRoutes.length > 0 && (
+      {!isPublic && favoriteRoutes.length > 0 && (
         <div>
           <div className="flex items-center space-x-2 mb-4">
             <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
@@ -156,7 +148,9 @@ export default function UserDashboard() {
       )}
 
       {/* Main Content */}
-      {viewMode === 'list' ? (
+      {viewMode === 'map' ? (
+        <MapView routes={filteredRoutes} selectedRoute={selectedRoute} onRouteSelect={setSelectedRoute} />
+      ) : (
         <div>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">
             {searchQuery ? `Search Results (${filteredRoutes.length})` : 'All Routes'}
@@ -172,14 +166,12 @@ export default function UserDashboard() {
             ))}
           </div>
         </div>
-      ) : (
-        <MapView routes={filteredRoutes} selectedRoute={selectedRoute} onRouteSelect={setSelectedRoute} />
       )}
 
       {/* Route Details Modal */}
       {selectedRoute && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative" style={{ zIndex: 10000 }}>
             <div className="p-6">
               <div className="flex justify-between items-start mb-4">
                 <div>
